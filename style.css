@@ -172,8 +172,11 @@ a { color: inherit; text-decoration: none; }
 .challenge .togo { font-size: 15px; font-weight: 600; color: var(--sage); }
 .challenge .left { flex: 1; min-width: 0; }
 
-.dots { display: grid; grid-template-columns: repeat(10, 8px); gap: 4px; }
-.dot { width: 8px; height: 8px; border-radius: 2.5px; background: rgba(244, 240, 230, .07); }
+.dots { display: grid; grid-template-columns: repeat(var(--cols, 10), var(--dot, 8px)); gap: var(--gap, 4px); }
+.dot { width: var(--dot, 8px); height: var(--dot, 8px); border-radius: 2.5px; background: rgba(244, 240, 230, .07); }
+/* Challenges longer than 400 days show a bar instead of dots. */
+.long-bar { flex: 0 0 38%; height: 10px; border-radius: 999px; background: rgba(244, 240, 230, .08); overflow: hidden; }
+.long-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .dot.full { background: var(--accent); }
 .dot.is-today { box-shadow: 0 0 0 1.5px var(--ink), 0 0 0 2.7px var(--lavender); }
 
@@ -503,8 +506,6 @@ input.day-rename:focus { border-color: rgba(180, 176, 230, .6); }
 @media (max-width: 360px) {
   .hero h1 { font-size: 42px; }
   .challenge .big { font-size: 46px; }
-  .dots { grid-template-columns: repeat(10, 7px); gap: 3px; }
-  .dot { width: 7px; height: 7px; }
 }
 
 .nowrap { white-space: nowrap; }
@@ -544,3 +545,34 @@ input.day-rename:focus { border-color: rgba(180, 176, 230, .6); }
   font-size: 16px;
 }
 .muted-text { color: var(--muted); font-size: 15px; }
+
+/* ---------- Custom mission ---------- */
+
+.hero { cursor: pointer; }
+.hero h1 { overflow-wrap: anywhere; text-wrap: balance; }
+.hero h1.small { font-size: 38px; }
+.hero h1.smaller { font-size: 30px; }
+
+.field-row { display: flex; align-items: center; gap: 12px; min-height: 48px; }
+.field-row + .field-row { border-top: 1px solid rgba(244, 240, 230, .06); }
+.field-label { flex: none; width: 92px; font-size: 15px; color: var(--muted); }
+.field-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font-size: 17px;
+  text-align: right;
+}
+.list-row input.challenge-length {
+  flex: none;
+  width: 72px;
+  text-align: right;
+  color: var(--sage);
+  font-weight: 600;
+  -moz-appearance: textfield;
+}
+.list-row input.challenge-length::-webkit-inner-spin-button,
+.list-row input.challenge-length::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }

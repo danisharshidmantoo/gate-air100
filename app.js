@@ -4,8 +4,14 @@
    Same data model as the native app: daily task definitions, one log per day
    (tasks with done/feedback, plus learnings), and a 100-day challenge start. */
 
-const LENGTH = 100;
 const STORAGE_KEY = "gate-air100:v1";
+
+// Defaults match the original GATE AIR<100 mission; all of them can be changed in Settings.
+const DEFAULT_MISSION = { label: "GATE", title: "AIR < 100", subtitle: "in < 100 days" };
+const DEFAULT_LENGTH = 100;
+const MIN_LENGTH = 7;
+const MAX_LENGTH = 1000;
+const validLength = (n) => Number.isInteger(n) && n >= MIN_LENGTH && n <= MAX_LENGTH;
 
 // ---------- Dates (keys are "yyyy-mm-dd" in local time) ----------
 
@@ -26,8 +32,11 @@ const newId = () => (crypto.randomUUID ? crypto.randomUUID()
 let state = load();
 
 function emptyState() {
-  return { tasks: [], days: {}, firstDay: null, startDay: null };
+  return { tasks: [], days: {}, firstDay: null, startDay: null, mission: { ...DEFAULT_MISSION }, length: DEFAULT_LENGTH };
 }
+
+/** How many days the challenge runs (100 unless you change it). */
+const challengeLength = () => state.length;
 
 /** Accepts this app's data and the native app's JSON (same field names). */
 function normalize(s) {
@@ -45,11 +54,20 @@ function normalize(s) {
       skipped: Array.isArray(log.skipped) ? log.skipped.map(String) : [],
     };
   }
+  const m = s.mission || {};
+  const text = (v, fallback) => (typeof v === "string" ? v : fallback);
   return {
     tasks: s.tasks.map((t) => ({ id: String(t.id), title: String(t.title ?? "") })),
     days,
     firstDay: s.firstDay || null,
     startDay: s.startDay || null,
+    // Older data has no mission or length: keep the original GATE AIR<100 wording and 100 days.
+    mission: {
+      label: text(m.label, DEFAULT_MISSION.label),
+      title: text(m.title, DEFAULT_MISSION.title),
+      subtitle: text(m.subtitle, DEFAULT_MISSION.subtitle),
+    },
+    length: validLength(Number(s.length)) ? Number(s.length) : DEFAULT_LENGTH,
   };
 }
 
@@ -222,8 +240,8 @@ function monthAverage(y, m) {
 const challengeStart = () => state.startDay || state.firstDay || todayKey();
 /** 1 on the start day, 100 on the last; 0 or less before it starts. */
 const challengeDay = (key = todayKey()) => daysBetween(challengeStart(), key) + 1;
-const daysLeft = () => Math.max(0, LENGTH - challengeDay());
-const challengeEnd = () => addDays(challengeStart(), LENGTH - 1);
+const daysLeft = () => Math.max(0, challengeLength() - challengeDay());
+const challengeEnd = () => addDays(challengeStart(), challengeLength() - 1);
 
 function edit(key, change) {
   const l = structuredClone(log(key));
@@ -322,8 +340,29 @@ function setChallengeStart(key) {
 }
 
 /** Sets Day 1 so that today has `left` days remaining. */
+/** Mission text for display: escaped, with < and > set in the bolder sans face (the serif ones are hairlines). */
+const missionText = (s) => esc(s).replace(/&lt;|&gt;|≤|≥/g, (c) => `<span class="lt">${c}</span>`);
+
+function setMission(field, value) {
+  state.mission[field] = value;
+  save();
+}
+
+function setChallengeLength(n) {
+  state.length = n;
+  save();
+}
+
+/** Grid shape for the progress dots: up to 400 days as dots, longer challenges as a bar. */
+function dotLayout(n) {
+  if (n <= 100) return { cols: 10, size: 8, gap: 4 };
+  if (n <= 225) return { cols: 15, size: 5, gap: 3 };
+  if (n <= 400) return { cols: 20, size: 4, gap: 2 };
+  return null;
+}
+
 function setDaysLeft(left) {
-  setChallengeStart(addDays(todayKey(), -(LENGTH - 1 - left)));
+  setChallengeStart(addDays(todayKey(), -(challengeLength() - 1 - left)));
 }
 
 // ---------- Colours ----------
@@ -393,14 +432,18 @@ let editingDay = false;
 /** The big countdown on the home screen: days left, with the day number and end date underneath. */
 function countdownParts() {
   const day = challengeDay();
-  const end = shortDate(challengeEnd());
+  const endKey = challengeEnd();
+  // Add the year once the end is far enough away that "10 Mar" would be ambiguous.
+  const end = Math.abs(daysBetween(todayKey(), endKey)) > 330
+    ? dateOf(endKey).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })
+    : shortDate(endKey);
   if (day < 1) return { label: "Starts in", big: 1 - day, unit: 1 - day === 1 ? "day" : "days", sub: `Day 1 is ${shortDate(challengeStart())}` };
-  if (day > LENGTH) return { label: "Challenge", big: "Done", unit: "", sub: `Ended ${end}` };
+  if (day > challengeLength()) return { label: "Challenge", big: "Done", unit: "", sub: `Ended ${end}` };
   const left = daysLeft();
   return {
     label: "Days left",
     big: left,
-    unit: `/ ${LENGTH}`,
+    unit: `/ ${challengeLength()}`,
     sub: left === 0 ? "Last day. Finish strong." : `Day ${day} · <span class="nowrap">ends ${end}</span>`,
   };
 }
@@ -417,14 +460,24 @@ function homeView() {
   const cd = countdownParts();
 
   const start = challengeStart();
+  const n = challengeLength();
+  const layout = dotLayout(n);
   let dots = "";
-  for (let i = 0; i < LENGTH; i++) {
-    const k = addDays(start, i);
-    const p = progress(k);
-    const cls = ["dot", p === 1 ? "full" : "", k === t ? "is-today" : ""].join(" ");
-    const bg = p === null || p === 1 ? "" : ` style="background:${tileColor(p)}"`;
-    dots += `<i class="${cls}"${k > t ? "" : bg} title="${shortDate(k)}"></i>`;
+  if (layout) {
+    for (let i = 0; i < n; i++) {
+      const k = addDays(start, i);
+      const p = progress(k);
+      const cls = ["dot", p === 1 ? "full" : "", k === t ? "is-today" : ""].join(" ");
+      const bg = p === null || p === 1 ? "" : ` style="background:${tileColor(p)}"`;
+      dots += `<i class="${cls}"${k > t ? "" : bg} title="${shortDate(k)}"></i>`;
+    }
   }
+  const elapsed = Math.min(Math.max(challengeDay() - 1, 0), n) / n;
+  const progressBlock = layout
+    ? `<div class="dots" style="--cols:${layout.cols};--dot:${layout.size}px;--gap:${layout.gap}px" aria-label="${n}-day progress">${dots}</div>`
+    : `<div class="long-bar" aria-label="${pct(elapsed)} of the challenge done"><i style="width:${elapsed * 100}%"></i></div>`;
+  const m = state.mission;
+  const titleSize = m.title.length > 22 ? " smaller" : m.title.length > 12 ? " small" : "";
 
   const first = new Date(viewMonth.y, viewMonth.m, 1);
   const days = new Date(viewMonth.y, viewMonth.m + 1, 0).getDate();
@@ -450,10 +503,10 @@ function homeView() {
     </header>
 
     <div class="home-grid">
-    <section class="hero">
-      <div class="label">GATE</div>
-      <h1>AIR <span class="lt">&lt;</span> 100</h1>
-      <div class="subtitle">in <span class="lt">&lt;</span> 100 days</div>
+    <section class="hero" data-nav="#/tasks" title="Edit your mission in settings">
+      ${m.label.trim() ? `<div class="label">${missionText(m.label)}</div>` : ""}
+      <h1 class="${titleSize.trim()}">${missionText(m.title.trim() || "My mission")}</h1>
+      ${m.subtitle.trim() ? `<div class="subtitle">${missionText(m.subtitle)}</div>` : ""}
     </section>
 
     <section class="card challenge">
@@ -465,7 +518,7 @@ function homeView() {
         </div>
         <div class="togo">${cd.sub}</div>
       </div>
-      <div class="dots" aria-label="100-day progress">${dots}</div>
+      ${progressBlock}
     </section>
 
     ${backupDue() ? `<section class="card backup-nudge">
@@ -558,7 +611,7 @@ function dayView(key) {
     <section class="day-head">
       ${future ? ring(null, 100, 10, 22) : ring(l.tasks.length ? done / l.tasks.length : 0, 100, 10, 22)}
       <div class="day-info">
-        ${cd >= 1 && cd <= LENGTH ? `<div class="label">Day ${cd} of ${LENGTH}</div>` : ""}
+        ${cd >= 1 && cd <= challengeLength() ? `<div class="label">Day ${cd} of ${challengeLength()}</div>` : ""}
         <div class="date">${longDate(key)}</div>
         <div class="sub">${daySub(l, future)}</div>
       </div>
@@ -570,7 +623,7 @@ function dayView(key) {
 
     <section class="card">
       <span class="label">${future ? "Planned tasks" : "Tasks"}</span>
-      ${editingDay ? '<p class="edit-note">Rename or remove tasks for this day only. To change every day, use Daily tasks.</p>' : ""}
+      ${editingDay ? '<p class="edit-note">Rename or remove tasks for this day only. To change every day, use Settings.</p>' : ""}
       ${l.tasks.length ? "" : `<div class="hint">No tasks yet. Add one below, or set up tasks that repeat every day.
         <button class="text-btn" data-nav="#/tasks">Daily tasks</button></div>`}
       ${tasks}
@@ -605,7 +658,7 @@ function tasksView() {
   return `
     <header class="topbar">
       <button class="back" data-action="back">${icons.back}Days</button>
-      <h2>Daily tasks</h2>
+      <h2>Settings</h2>
       <span></span>
     </header>
 
@@ -622,11 +675,32 @@ function tasksView() {
     </section>
     <p class="footnote">Tap a name to rename it. Changes apply from today on; past days keep what they had.</p>
 
-    <div class="label section-label">100-day challenge</div>
+    <div class="label section-label">Mission</div>
+    <section class="card list" style="margin-top:0">
+      <label class="field-row">
+        <span class="field-label">Small label</span>
+        <input class="mission" data-field="label" value="${esc(state.mission.label)}" placeholder="e.g. GATE" maxlength="30" enterkeyhint="done">
+      </label>
+      <label class="field-row">
+        <span class="field-label">Goal</span>
+        <input class="mission" data-field="title" value="${esc(state.mission.title)}" placeholder="e.g. AIR < 100" maxlength="40" enterkeyhint="done">
+      </label>
+      <label class="field-row">
+        <span class="field-label">Subtitle</span>
+        <input class="mission" data-field="subtitle" value="${esc(state.mission.subtitle)}" placeholder="e.g. in < 100 days" maxlength="50" enterkeyhint="done">
+      </label>
+    </section>
+    <p class="footnote">This is the headline on your home screen. Leave the label or subtitle empty to hide it.</p>
+
+    <div class="label section-label">Challenge</div>
     <section class="card list" style="margin-top:0">
       <div class="list-row">
+        <span class="row-label">Length in days</span>
+        <input type="number" class="challenge-length" inputmode="numeric" min="${MIN_LENGTH}" max="${MAX_LENGTH}" value="${challengeLength()}" aria-label="Challenge length in days">
+      </div>
+      <div class="list-row">
         <span class="row-label">Days left today</span>
-        <input type="number" class="days-left" inputmode="numeric" min="0" max="${LENGTH - 1}" value="${daysLeft()}" aria-label="Days left today">
+        <input type="number" class="days-left" inputmode="numeric" min="0" max="${challengeLength() - 1}" value="${daysLeft()}" aria-label="Days left today">
       </div>
       <div class="list-row">
         <span class="row-label">Day 1</span>
@@ -637,7 +711,7 @@ function tasksView() {
         <span class="row-value">${longDate(challengeEnd())}</span>
       </div>
     </section>
-    <p class="footnote">Set either the days left or the Day 1 date; the other follows. The home screen counts down one day at a time.</p>
+    <p class="footnote">Set either the days left or the Day 1 date; the other follows. Changing the length keeps Day 1 and moves the last day. The home screen counts down one day at a time.</p>
 
     <div class="label section-label">Backup</div>
     <div class="buttons" style="margin-top:0">
@@ -675,7 +749,8 @@ function render({ keepScroll = false } = {}) {
   app.querySelectorAll("textarea.note").forEach(autosize);
   if (r.name === "tasks") fillSnapshots();
   window.scrollTo(0, keepScroll ? y : 0);
-  document.title = r.name === "home" ? "GATE AIR<100" : r.name === "tasks" ? "Daily tasks · AIR<100" : `${shortDate(r.key)} · AIR<100`;
+  const name = state.mission.title.trim() || "My mission";
+  document.title = r.name === "home" ? name : r.name === "tasks" ? `Settings · ${name}` : `${shortDate(r.key)} · ${name}`;
 }
 
 async function fillSnapshots() {
@@ -813,13 +888,14 @@ app.addEventListener("input", (e) => {
   else if (el.matches(".add-input")) el.closest(".add").classList.toggle("has-text", !!el.value.trim());
   else if (el.matches(".rename")) renameTask(el.closest("[data-id]").dataset.id, el.value);
   else if (el.matches(".day-rename")) renameDayTask(el.closest("[data-id]").dataset.id, r.key, el.value);
+  else if (el.matches(".mission")) setMission(el.dataset.field, el.value);
 });
 
 app.addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || e.isComposing) return;
   if (e.target.matches(".add-input")) { e.preventDefault(); addFromDay(route().key); }
   else if (e.target.matches(".new-daily")) { e.preventDefault(); addFromTasks(); }
-  else if (e.target.matches(".rename, .day-rename, .days-left")) { e.preventDefault(); e.target.blur(); }
+  else if (e.target.matches(".rename, .day-rename, .days-left, .challenge-length, .mission")) { e.preventDefault(); e.target.blur(); }
 });
 
 app.addEventListener("change", (e) => {
@@ -827,10 +903,20 @@ app.addEventListener("change", (e) => {
     setChallengeStart(e.target.value);
     render({ keepScroll: true });
     toast(`Day 1 is now ${shortDate(e.target.value)}`);
+  } else if (e.target.matches(".challenge-length")) {
+    const n = Math.round(Number(e.target.value));
+    if (!validLength(n)) {
+      toast(`Enter a length from ${MIN_LENGTH} to ${MAX_LENGTH} days`);
+      e.target.value = challengeLength();
+      return;
+    }
+    setChallengeLength(n);
+    render({ keepScroll: true });
+    toast(`${n}-day challenge · ends ${shortDate(challengeEnd())}`);
   } else if (e.target.matches(".days-left")) {
     const left = Math.round(Number(e.target.value));
-    if (!Number.isFinite(left) || left < 0 || left > LENGTH - 1) {
-      toast(`Enter a number from 0 to ${LENGTH - 1}`);
+    if (!Number.isFinite(left) || left < 0 || left > challengeLength() - 1) {
+      toast(`Enter a number from 0 to ${challengeLength() - 1}`);
       e.target.value = daysLeft();
       return;
     }
@@ -918,7 +1004,7 @@ document.getElementById("import-file").addEventListener("change", async (e) => {
     render();
     toast("Backup imported");
   } catch {
-    toast("That file isn't a GATE AIR<100 backup");
+    toast("That file isn't a backup from this app");
   }
 });
 
