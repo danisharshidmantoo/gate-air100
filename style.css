@@ -388,6 +388,79 @@ textarea::placeholder, input::placeholder { color: var(--faint); }
 }
 .pill:active { transform: scale(.98); }
 
+/* ---------- Streak badge (home top bar) ---------- */
+
+.streak-chip {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px 7px 9px;
+  border-radius: 999px;
+  background: rgba(141, 184, 160, .12);
+  border: 1px solid rgba(141, 184, 160, .28);
+  font-size: 14px;
+  color: rgba(244, 240, 230, .85);
+  white-space: nowrap;
+  animation: rise .45s cubic-bezier(.2, .8, .2, 1) both;
+}
+.streak-chip svg { width: 16px; height: 16px; }
+.streak-chip b { font: 700 16px var(--sans); color: var(--ivory); font-variant-numeric: tabular-nums; }
+.streak-chip.cold { background: rgba(244, 240, 230, .05); border-color: rgba(244, 240, 230, .1); color: var(--muted); }
+.streak-chip.cold svg { opacity: .5; }
+
+/* ---------- Day page: navigation, planning, edit mode ---------- */
+
+.topbar .text-btn.right { justify-self: end; font-size: 17px; }
+.day-info { flex: 1; min-width: 0; }
+.day-nav { display: flex; flex-direction: column; gap: 8px; align-self: center; }
+.day-nav .icon-btn { width: 34px; height: 34px; color: var(--ivory); }
+.day-nav .icon-btn svg { width: 15px; height: 15px; }
+
+.check:disabled { opacity: .35; cursor: default; }
+.check:disabled:active { transform: none; }
+
+.edit-note { margin: -4px 0 12px; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.task.editing .task-row { align-items: center; }
+.task.editing .oneoff { margin: 4px 0 0; color: var(--faint); }
+input.day-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid rgba(180, 176, 230, .3);
+  border-radius: 12px;
+  outline: none;
+  background: var(--field);
+  font-size: 16px;
+}
+input.day-rename:focus { border-color: rgba(180, 176, 230, .6); }
+
+.tile.future { background: rgba(244, 240, 230, .025); color: rgba(244, 240, 230, .4); }
+.tile.planned { color: rgba(244, 240, 230, .75); }
+.tile.planned .pct::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--lavender);
+  vertical-align: middle;
+}
+
+/* ---------- Settings rows ---------- */
+
+.list-row input.days-left {
+  flex: none;
+  width: 72px;
+  text-align: right;
+  color: var(--sage);
+  font-weight: 600;
+  -moz-appearance: textfield;
+}
+.list-row input.days-left::-webkit-inner-spin-button,
+.list-row input.days-left::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.row-value { font-size: 15px; color: var(--muted); text-align: right; }
+
 /* ---------- Toast ---------- */
 
 #toast {
@@ -433,3 +506,5 @@ textarea::placeholder, input::placeholder { color: var(--faint); }
   .dots { grid-template-columns: repeat(10, 7px); gap: 3px; }
   .dot { width: 7px; height: 7px; }
 }
+
+.nowrap { white-space: nowrap; }

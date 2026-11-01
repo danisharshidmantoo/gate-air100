@@ -38,9 +38,11 @@ function normalize(s) {
     days[k] = {
       tasks: (log.tasks || []).map((t) => ({
         id: String(t.id), title: String(t.title ?? ""), done: !!t.done,
-        feedback: String(t.feedback ?? ""), isOneOff: !!t.isOneOff,
+        feedback: String(t.feedback ?? ""), isOneOff: !!t.isOneOff, renamed: !!t.renamed,
       })),
       learnings: String(log.learnings ?? ""),
+      // daily tasks you removed from this one day
+      skipped: Array.isArray(log.skipped) ? log.skipped.map(String) : [],
     };
   }
   return {
@@ -67,11 +69,11 @@ function save() {
   }
 }
 
-const taskLog = (def) => ({ id: def.id, title: def.title, done: false, feedback: "", isOneOff: false });
+const taskLog = (def) => ({ id: def.id, title: def.title, done: false, feedback: "", isOneOff: false, renamed: false });
 
 /** The log for a day. Untouched days are built from the current task list. */
 function log(key) {
-  return state.days[key] || { tasks: state.tasks.map(taskLog), learnings: "" };
+  return state.days[key] || { tasks: state.tasks.map(taskLog), learnings: "", skipped: [] };
 }
 
 /** Share of tasks done (0..1), or null for future days and days before you started. */
@@ -116,6 +118,7 @@ const challengeStart = () => state.startDay || state.firstDay || todayKey();
 /** 1 on the start day, 100 on the last; 0 or less before it starts. */
 const challengeDay = (key = todayKey()) => daysBetween(challengeStart(), key) + 1;
 const daysLeft = () => Math.max(0, LENGTH - challengeDay());
+const challengeEnd = () => addDays(challengeStart(), LENGTH - 1);
 
 function edit(key, change) {
   const l = structuredClone(log(key));
@@ -129,7 +132,19 @@ const findTask = (l, id) => l.tasks.find((t) => t.id === id);
 function toggle(id, key) { edit(key, (l) => { const t = findTask(l, id); if (t) t.done = !t.done; }); }
 function setFeedback(id, key, text) { edit(key, (l) => { const t = findTask(l, id); if (t) t.feedback = text; }); }
 function setLearnings(key, text) { edit(key, (l) => { l.learnings = text; }); }
-function removeTask(id, key) { edit(key, (l) => { l.tasks = l.tasks.filter((t) => t.id !== id); }); }
+/** Removes a task from one day only. Daily tasks are remembered as skipped so list changes don't bring them back. */
+function removeTask(id, key) {
+  edit(key, (l) => {
+    const t = findTask(l, id);
+    if (t && !t.isOneOff && !l.skipped.includes(id)) l.skipped.push(id);
+    l.tasks = l.tasks.filter((x) => x.id !== id);
+  });
+}
+
+/** Renames a task on one day only. */
+function renameDayTask(id, key, title) {
+  edit(key, (l) => { const t = findTask(l, id); if (t) { t.title = title; t.renamed = true; } });
+}
 
 function addOneOffTask(title, key) {
   title = title.trim();
@@ -174,15 +189,21 @@ function moveTask(id, delta) {
   tasksChanged();
 }
 
-/** Daily-list changes update today's log; past days keep their history. One-off tasks stay. */
+/** Daily-list changes update today and any planned future days; past days keep their history.
+    Per-day edits stay: one-off tasks, tasks skipped on that day, and titles renamed for that day. */
 function tasksChanged() {
-  const key = todayKey();
-  const old = state.days[key];
-  if (old) {
+  const today = todayKey();
+  for (const [key, old] of Object.entries(state.days)) {
+    if (key < today) continue;
     state.days[key] = {
       ...old,
       tasks: [
-        ...state.tasks.map((def) => ({ ...(findTask(old, def.id) || taskLog(def)), title: def.title })),
+        ...state.tasks
+          .filter((def) => !old.skipped.includes(def.id))
+          .map((def) => {
+            const entry = findTask(old, def.id) || taskLog(def);
+            return { ...entry, title: entry.renamed ? entry.title : def.title };
+          }),
         ...old.tasks.filter((t) => t.isOneOff),
       ],
     };
@@ -193,6 +214,11 @@ function tasksChanged() {
 function setChallengeStart(key) {
   state.startDay = key;
   save();
+}
+
+/** Sets Day 1 so that today has `left` days remaining. */
+function setDaysLeft(left) {
+  setChallengeStart(addDays(todayKey(), -(LENGTH - 1 - left)));
 }
 
 // ---------- Colours ----------
@@ -257,17 +283,33 @@ const app = document.getElementById("app");
 const now = new Date();
 let viewMonth = { y: now.getFullYear(), m: now.getMonth() };
 let addEveryDay = false;
+let editingDay = false;
+
+/** The big countdown on the home screen: days left, with the day number and end date underneath. */
+function countdownParts() {
+  const day = challengeDay();
+  const end = shortDate(challengeEnd());
+  if (day < 1) return { label: "Starts in", big: 1 - day, unit: 1 - day === 1 ? "day" : "days", sub: `Day 1 is ${shortDate(challengeStart())}` };
+  if (day > LENGTH) return { label: "Challenge", big: "Done", unit: "", sub: `Ended ${end}` };
+  const left = daysLeft();
+  return {
+    label: "Days left",
+    big: left,
+    unit: `/ ${LENGTH}`,
+    sub: left === 0 ? "Last day. Finish strong." : `Day ${day} · <span class="nowrap">ends ${end}</span>`,
+  };
+}
+
+function streakChip() {
+  const n = currentStreak();
+  return `<div class="streak-chip${n ? "" : " cold"}">${icons.flame}<span>${n ? `<b>${n}</b> day streak` : "Start a streak today"}</span></div>`;
+}
 
 function homeView() {
   const t = todayKey();
-  const day = challengeDay();
   const todayLog = log(t);
   const avg = monthAverage(viewMonth.y, viewMonth.m);
-
-  let countdown;
-  if (day < 1) countdown = "Get ready";
-  else if (day >= LENGTH) countdown = "Challenge complete";
-  else countdown = daysLeft() === 1 ? "1 day to go" : `${daysLeft()} days to go`;
+  const cd = countdownParts();
 
   const start = challengeStart();
   let dots = "";
@@ -281,22 +323,25 @@ function homeView() {
 
   const first = new Date(viewMonth.y, viewMonth.m, 1);
   const days = new Date(viewMonth.y, viewMonth.m + 1, 0).getDate();
-  const isThisMonth = viewMonth.y === now.getFullYear() && viewMonth.m === now.getMonth();
   const weekdays = ["S", "M", "T", "W", "T", "F", "S"].map((d) => `<div class="wd">${d}</div>`).join("");
   let cells = "<div></div>".repeat(first.getDay());
   for (let d = 1; d <= days; d++) {
     const k = keyOf(new Date(viewMonth.y, viewMonth.m, d));
     const p = progress(k);
     const future = k > t;
-    const cls = ["tile", p === 1 ? "full" : "", k === t ? "is-today" : ""].join(" ");
+    const planned = future && !!state.days[k];
+    const cls = ["tile", p === 1 ? "full" : "", k === t ? "is-today" : "", future ? "future" : "", planned ? "planned" : ""].join(" ");
     const style = p !== null && p < 1 ? ` style="background:${tileColor(p)}"` : "";
-    cells += `<button class="${cls}"${style} data-nav="#/day/${k}" ${future ? "disabled" : ""} aria-label="${longDate(k)}${p === null ? "" : ", " + pct(p)}">
+    const label = p !== null ? ", " + pct(p) : planned ? ", planned" : "";
+    cells += `<button class="${cls}"${style} data-nav="#/day/${k}" aria-label="${longDate(k)}${label}">
       <span class="num">${d}</span><span class="pct">${p === null ? "" : pct(p)}</span></button>`;
   }
 
   return `
-    <header class="topbar home"><span></span><span></span>
-      <button class="icon-btn right" data-nav="#/tasks" aria-label="Daily tasks">${icons.checklist}</button>
+    <header class="topbar home">
+      ${streakChip()}
+      <span></span>
+      <button class="icon-btn right" data-nav="#/tasks" aria-label="Daily tasks and settings">${icons.checklist}</button>
     </header>
 
     <div class="home-grid">
@@ -308,19 +353,19 @@ function homeView() {
 
     <section class="card challenge">
       <div class="left">
-        <div class="label">${day < 1 ? "Starts in" : "Day"}</div>
+        <div class="label">${cd.label}</div>
         <div class="count">
-          <span class="big">${day < 1 ? 1 - day : Math.min(day, LENGTH)}</span>
-          <span class="of">${day < 1 ? "days" : `/ ${LENGTH}`}</span>
+          <span class="big">${cd.big}</span>
+          <span class="of">${cd.unit}</span>
         </div>
-        <div class="togo">${countdown}</div>
+        <div class="togo">${cd.sub}</div>
       </div>
       <div class="dots" aria-label="100-day progress">${dots}</div>
     </section>
 
     <section class="stats">
       <div class="card stat">${icons.flame}<div class="value">${currentStreak()}</div><div class="name">Streak</div></div>
-      <div class="card stat">${icons.trophy}<div class="value">${bestStreak()}</div><div class="name">Best</div></div>
+      <div class="card stat">${icons.trophy}<div class="value">${bestStreak()}</div><div class="name">Best streak</div></div>
       <div class="card stat">${icons.bars}<div class="value">${avg === null ? "–" : pct(avg)}</div><div class="name">Month avg</div></div>
     </section>
 
@@ -337,7 +382,7 @@ function homeView() {
       <div class="month-head">
         <h3>${first.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</h3>
         <button class="icon-btn" data-action="month" data-delta="-1" aria-label="Previous month">${icons.left}</button>
-        <button class="icon-btn" data-action="month" data-delta="1" aria-label="Next month" ${isThisMonth ? "disabled" : ""}>${icons.right}</button>
+        <button class="icon-btn" data-action="month" data-delta="1" aria-label="Next month">${icons.right}</button>
       </div>
       <div class="grid">${weekdays}${cells}</div>
       <div class="legend">0%
@@ -348,44 +393,68 @@ function homeView() {
     </div>`;
 }
 
-const placeholder = (done) => (done ? "What went well?" : "What got in the way?");
+const placeholder = (done, future) => (future ? "Plan or notes for this day" : done ? "What went well?" : "What got in the way?");
+
+function dayName(key) {
+  const diff = daysBetween(todayKey(), key);
+  return diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : diff === -1 ? "Yesterday" : shortDate(key);
+}
+
+function daySub(l, future) {
+  if (!l.tasks.length) return "No tasks yet";
+  if (future) return l.tasks.length === 1 ? "1 task planned" : `${l.tasks.length} tasks planned`;
+  return `${l.tasks.filter((t) => t.done).length} of ${l.tasks.length} done`;
+}
 
 function dayView(key) {
   const l = log(key);
   const cd = challengeDay(key);
+  const future = key > todayKey();
   const done = l.tasks.filter((t) => t.done).length;
 
-  const tasks = l.tasks.map((t) => `
+  const tasks = l.tasks.map((t) => editingDay ? `
+    <div class="task editing" data-id="${esc(t.id)}">
+      <div class="task-row">
+        <input class="day-rename" value="${esc(t.title)}" aria-label="Task name for this day" enterkeyhint="done">
+        <button class="mini-btn danger" data-action="remove" aria-label="Remove ${esc(t.title)} from this day">${icons.trash}</button>
+      </div>
+      <div class="oneoff">${t.isOneOff ? "This day only" : "Daily task"}${t.renamed ? " · renamed for this day" : ""}</div>
+    </div>` : `
     <div class="task${t.done ? " done" : ""}" data-id="${esc(t.id)}">
       <div class="task-row">
-        <button class="check" data-action="toggle" aria-label="Mark ${esc(t.title)} ${t.done ? "not done" : "done"}">${icons.circle}${icons.checked}</button>
-        <div class="task-text" data-action="toggle">
+        <button class="check" data-action="toggle" ${future ? "disabled" : ""} aria-label="Mark ${esc(t.title)} ${t.done ? "not done" : "done"}">${icons.circle}${icons.checked}</button>
+        <div class="task-text"${future ? "" : ' data-action="toggle"'}>
           <div class="task-title">${esc(t.title)}</div>
           ${t.isOneOff ? '<div class="oneoff">This day only</div>' : ""}
         </div>
         ${t.isOneOff ? `<button class="mini-btn" data-action="remove" aria-label="Delete ${esc(t.title)}">${icons.x}</button>` : ""}
       </div>
-      <textarea class="note" rows="1" data-id="${esc(t.id)}" placeholder="${placeholder(t.done)}">${esc(t.feedback)}</textarea>
+      <textarea class="note" rows="1" data-id="${esc(t.id)}" placeholder="${placeholder(t.done, future)}">${esc(t.feedback)}</textarea>
     </div>`).join("");
 
   return `
     <header class="topbar">
       <button class="back" data-action="back">${icons.back}Days</button>
-      <h2>${key === todayKey() ? "Today" : shortDate(key)}</h2>
-      <span></span>
+      <h2>${dayName(key)}</h2>
+      <button class="text-btn right" data-action="edit-day">${editingDay ? "Done" : "Edit"}</button>
     </header>
 
     <section class="day-head">
-      ${ring(l.tasks.length ? done / l.tasks.length : 0, 100, 10, 22)}
-      <div>
+      ${future ? ring(null, 100, 10, 22) : ring(l.tasks.length ? done / l.tasks.length : 0, 100, 10, 22)}
+      <div class="day-info">
         ${cd >= 1 && cd <= LENGTH ? `<div class="label">Day ${cd} of ${LENGTH}</div>` : ""}
         <div class="date">${longDate(key)}</div>
-        <div class="sub">${l.tasks.length ? `${done} of ${l.tasks.length} done` : "No tasks yet"}</div>
+        <div class="sub">${daySub(l, future)}</div>
+      </div>
+      <div class="day-nav">
+        <button class="icon-btn" data-action="day" data-delta="-1" aria-label="Previous day">${icons.left}</button>
+        <button class="icon-btn" data-action="day" data-delta="1" aria-label="Next day">${icons.right}</button>
       </div>
     </section>
 
     <section class="card">
-      <span class="label">Tasks</span>
+      <span class="label">${future ? "Planned tasks" : "Tasks"}</span>
+      ${editingDay ? '<p class="edit-note">Rename or remove tasks for this day only. To change every day, use Daily tasks.</p>' : ""}
       ${l.tasks.length ? "" : `<div class="hint">No tasks yet. Add one below, or set up tasks that repeat every day.
         <button class="text-btn" data-nav="#/tasks">Daily tasks</button></div>`}
       ${tasks}
@@ -402,10 +471,10 @@ function dayView(key) {
       </div>
     </section>
 
-    <section class="card">
+    ${future ? "" : `<section class="card">
       <span class="label">Learnings</span>
       <textarea class="note learn" placeholder="What did today teach you?">${esc(l.learnings)}</textarea>
-    </section>`;
+    </section>`}`;
 }
 
 function tasksView() {
@@ -440,11 +509,19 @@ function tasksView() {
     <div class="label section-label">100-day challenge</div>
     <section class="card list" style="margin-top:0">
       <div class="list-row">
+        <span class="row-label">Days left today</span>
+        <input type="number" class="days-left" inputmode="numeric" min="0" max="${LENGTH - 1}" value="${daysLeft()}" aria-label="Days left today">
+      </div>
+      <div class="list-row">
         <span class="row-label">Day 1</span>
         <input type="date" class="start-date" value="${challengeStart()}" aria-label="Challenge start date">
       </div>
+      <div class="list-row">
+        <span class="row-label">Last day</span>
+        <span class="row-value">${longDate(challengeEnd())}</span>
+      </div>
     </section>
-    <p class="footnote">The countdown on the home screen runs for 100 days from this date.</p>
+    <p class="footnote">Set either the days left or the Day 1 date; the other follows. The home screen counts down one day at a time.</p>
 
     <div class="label section-label">Backup</div>
     <div class="buttons" style="margin-top:0">
@@ -462,7 +539,7 @@ function tasksView() {
 function route() {
   const hash = location.hash || "#/";
   const day = hash.match(/^#\/day\/(\d{4}-\d{2}-\d{2})$/);
-  if (day && day[1] <= todayKey()) return { name: "day", key: day[1] };
+  if (day) return { name: "day", key: day[1] };
   if (hash === "#/tasks") return { name: "tasks" };
   return { name: "home" };
 }
@@ -470,6 +547,7 @@ function route() {
 function render({ keepScroll = false } = {}) {
   const y = window.scrollY;
   const r = route();
+  if (r.name !== "day") editingDay = false;
   app.innerHTML = r.name === "day" ? dayView(r.key) : r.name === "tasks" ? tasksView() : homeView();
   app.classList.toggle("wide", r.name === "home");
   app.querySelectorAll("textarea.note").forEach(autosize);
@@ -489,11 +567,11 @@ function refreshDay(key, id) {
   const row = app.querySelector(`.task[data-id="${CSS.escape(id)}"]`);
   if (t && row) {
     row.classList.toggle("done", t.done);
-    row.querySelector("textarea").placeholder = placeholder(t.done);
+    row.querySelector("textarea").placeholder = placeholder(t.done, false);
   }
   const done = l.tasks.filter((x) => x.done).length;
   updateRing(app.querySelector(".day-head .ring"), l.tasks.length ? done / l.tasks.length : 0);
-  app.querySelector(".day-head .sub").textContent = l.tasks.length ? `${done} of ${l.tasks.length} done` : "No tasks yet";
+  app.querySelector(".day-head .sub").textContent = daySub(l, false);
 }
 
 let navDepth = 0;
@@ -543,7 +621,20 @@ app.addEventListener("click", (e) => {
       break;
     }
     case "toggle": toggle(id, r.key); refreshDay(r.key, id); break;
-    case "remove": removeTask(id, r.key); render({ keepScroll: true }); toast("Task deleted"); break;
+    case "remove": {
+      const t = findTask(log(r.key), id);
+      removeTask(id, r.key);
+      render({ keepScroll: true });
+      const when = dayName(r.key);
+      toast(t && !t.isOneOff ? `Removed from ${when.endsWith("day") || when === "Tomorrow" ? when.toLowerCase() : when} only` : "Task deleted");
+      break;
+    }
+    case "edit-day": editingDay = !editingDay; render({ keepScroll: true }); break;
+    case "day":
+      // Step to the neighbouring day without stacking history, so Back still returns to the calendar.
+      history.replaceState(null, "", "#/day/" + addDays(r.key, Number(el.dataset.delta)));
+      render();
+      break;
     case "add": addFromDay(r.key); break;
     case "repeat":
       addEveryDay = el.dataset.every === "1";
@@ -579,19 +670,31 @@ app.addEventListener("input", (e) => {
   else if (el.matches("textarea.note")) { setFeedback(el.dataset.id, r.key, el.value); autosize(el); }
   else if (el.matches(".add-input")) el.closest(".add").classList.toggle("has-text", !!el.value.trim());
   else if (el.matches(".rename")) renameTask(el.closest("[data-id]").dataset.id, el.value);
+  else if (el.matches(".day-rename")) renameDayTask(el.closest("[data-id]").dataset.id, r.key, el.value);
 });
 
 app.addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || e.isComposing) return;
   if (e.target.matches(".add-input")) { e.preventDefault(); addFromDay(route().key); }
   else if (e.target.matches(".new-daily")) { e.preventDefault(); addFromTasks(); }
-  else if (e.target.matches(".rename")) { e.preventDefault(); e.target.blur(); }
+  else if (e.target.matches(".rename, .day-rename, .days-left")) { e.preventDefault(); e.target.blur(); }
 });
 
 app.addEventListener("change", (e) => {
   if (e.target.matches(".start-date") && e.target.value) {
     setChallengeStart(e.target.value);
+    render({ keepScroll: true });
     toast(`Day 1 is now ${shortDate(e.target.value)}`);
+  } else if (e.target.matches(".days-left")) {
+    const left = Math.round(Number(e.target.value));
+    if (!Number.isFinite(left) || left < 0 || left > LENGTH - 1) {
+      toast(`Enter a number from 0 to ${LENGTH - 1}`);
+      e.target.value = daysLeft();
+      return;
+    }
+    setDaysLeft(left);
+    render({ keepScroll: true });
+    toast(`${left} days left · ends ${shortDate(challengeEnd())}`);
   }
 });
 

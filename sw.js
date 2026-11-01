@@ -1,5 +1,5 @@
 // Offline support: fresh files when online (so updates show at once), cached copies when offline.
-const CACHE = "gate-air100-v2";
+const CACHE = "gate-air100-v3";
 const FILES = [
   "./",
   "./index.html",
