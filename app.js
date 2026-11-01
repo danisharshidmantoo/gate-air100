@@ -32,7 +32,7 @@ const newId = () => (crypto.randomUUID ? crypto.randomUUID()
 let state = load();
 
 function emptyState() {
-  return { tasks: [], days: {}, firstDay: null, startDay: null, mission: { ...DEFAULT_MISSION }, length: DEFAULT_LENGTH };
+  return { tasks: [], days: {}, firstDay: null, startDay: null, mission: { ...DEFAULT_MISSION }, length: DEFAULT_LENGTH, theme: "mono" };
 }
 
 /** How many days the challenge runs (100 unless you change it). */
@@ -68,6 +68,7 @@ function normalize(s) {
       subtitle: text(m.subtitle, DEFAULT_MISSION.subtitle),
     },
     length: validLength(Number(s.length)) ? Number(s.length) : DEFAULT_LENGTH,
+    theme: ["mono", "sunrise", "auto"].includes(s.theme) ? s.theme : "mono",
   };
 }
 
@@ -365,15 +366,38 @@ function setDaysLeft(left) {
   setChallengeStart(addDays(todayKey(), -(challengeLength() - 1 - left)));
 }
 
-// ---------- Colours ----------
+// ---------- Looks and colours ----------
 
-const mix = (a, b, t) => {
-  t = Math.min(Math.max(t, 0), 1);
-  const ch = (s) => Math.round(((a >> s) & 255) + (((b >> s) & 255) - ((a >> s) & 255)) * t);
-  return `rgb(${ch(16)}, ${ch(8)}, ${ch(0)})`;
+const THEMES = {
+  mono: { name: "Mono", bar: "#000000", scheme: "dark" },
+  sunrise: { name: "Sunrise", bar: "#FFF3EA", scheme: "light" },
 };
-/** Dim slate-blue at 0%, rising to sage. */
-const tileColor = (v) => mix(0x252E4C, 0x8DB8A0, 0.15 + v * 0.7);
+/** The choices in Settings: the two looks, or Auto (Sunrise in light mode, Mono in dark mode). */
+const LOOKS = ["mono", "sunrise", "auto"];
+
+/** ?theme=sunrise previews a look without saving it. */
+const previewTheme = new URLSearchParams(location.search).get("theme");
+const darkMode = matchMedia("(prefers-color-scheme: dark)");
+
+function applyTheme() {
+  let theme = LOOKS.includes(previewTheme) ? previewTheme : state.theme;
+  if (theme === "auto") theme = darkMode.matches ? "mono" : "sunrise";
+  document.documentElement.dataset.theme = theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEMES[theme].bar);
+  document.querySelector('meta[name="color-scheme"]')?.setAttribute("content", THEMES[theme].scheme);
+}
+
+// Auto follows the phone switching between light and dark mode.
+darkMode.addEventListener?.("change", () => { if (state.theme === "auto") applyTheme(); });
+
+function setLook(look) {
+  state.theme = look;
+  save();
+  applyTheme();
+}
+
+/** Empty-tile colour at 0%, rising to the main accent. */
+const tileColor = (v) => `color-mix(in srgb, rgb(var(--a1)) ${Math.round((0.15 + v * 0.7) * 100)}%, rgb(var(--tile0)))`;
 
 // ---------- Small views ----------
 
@@ -390,12 +414,12 @@ const icons = {
   down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
   x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
-  plus: '<svg class="plus" viewBox="0 0 28 28"><circle cx="14" cy="14" r="13" fill="currentColor"/><path d="M14 8.5v11M8.5 14h11" stroke="#0B1020" stroke-width="2.4" stroke-linecap="round"/></svg>',
+  plus: '<svg class="plus" viewBox="0 0 28 28"><circle cx="14" cy="14" r="13" fill="currentColor"/><path d="M14 8.5v11M8.5 14h11" style="stroke:var(--on-accent)" stroke-width="2.4" stroke-linecap="round"/></svg>',
   flame: '<svg viewBox="0 0 24 24" fill="url(#g-accent)"><path d="M12 2c1 3.5 5.5 6 5.5 11a5.5 5.5 0 0 1-11 0c0-2.5 1.2-4.2 2.5-5.5.2 1.7 1 2.8 2 3.3C10.5 7.8 11 4.6 12 2z"/></svg>',
   trophy: '<svg viewBox="0 0 24 24" fill="url(#g-accent)"><path d="M7 3h10v2h3v2.5A4.5 4.5 0 0 1 16.3 12 5 5 0 0 1 13 14.8V18h3v3H8v-3h3v-3.2A5 5 0 0 1 7.7 12 4.5 4.5 0 0 1 4 7.5V5h3V3zm0 4H6v.5a2.5 2.5 0 0 0 1.4 2.2A6 6 0 0 1 7 8V7zm10 0v1a6 6 0 0 1-.4 1.7A2.5 2.5 0 0 0 18 7.5V7h-1z"/></svg>',
   bars: '<svg viewBox="0 0 24 24" fill="url(#g-accent)"><rect x="3" y="12" width="5" height="9" rx="1.5"/><rect x="9.5" y="7" width="5" height="14" rx="1.5"/><rect x="16" y="3" width="5" height="18" rx="1.5"/></svg>',
   circle: '<svg class="off" viewBox="0 0 26 26"><circle cx="13" cy="13" r="11.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>',
-  checked: '<svg class="on" viewBox="0 0 26 26"><circle cx="13" cy="13" r="12.5" fill="currentColor"/><path d="M8 13.4l3.3 3.3L18.2 9.6" fill="none" stroke="#0B1020" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  checked: '<svg class="on" viewBox="0 0 26 26"><circle cx="13" cy="13" r="12.5" fill="currentColor"/><path d="M8 13.4l3.3 3.3L18.2 9.6" fill="none" style="stroke:var(--on-accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 
 /** Progress ring as SVG. stroke is in viewBox units (box is 100). */
@@ -675,6 +699,12 @@ function tasksView() {
     </section>
     <p class="footnote">Tap a name to rename it. Changes apply from today on; past days keep what they had.</p>
 
+    <div class="label section-label">Look</div>
+    <div class="seg look" role="radiogroup" aria-label="Look">
+      ${LOOKS.map((l) => `<button data-action="look" data-look="${l}" class="${state.theme === l ? "on" : ""}" role="radio" aria-checked="${state.theme === l}">${l === "auto" ? "Auto" : THEMES[l].name}</button>`).join("")}
+    </div>
+    <p class="footnote">Mono: black with a lime accent. Sunrise: warm and rounded. Auto uses Sunrise when your phone is in light mode and Mono in dark mode.</p>
+
     <div class="label section-label">Mission</div>
     <section class="card list" style="margin-top:0">
       <label class="field-row">
@@ -869,6 +899,7 @@ app.addEventListener("click", (e) => {
       break;
     }
     case "export": exportBackup(); break;
+    case "look": setLook(el.dataset.look); render({ keepScroll: true }); break;
     case "snooze-backup": setFlag(SNOOZE_KEY, todayKey()); render({ keepScroll: true }); break;
     case "restore-snapshot": restoreSnapshot(app.querySelector(".snapshot-pick").value); break;
     case "import": document.getElementById("import-file").click(); break;
@@ -1021,6 +1052,7 @@ function toast(text) {
 
 // ---------- Start ----------
 
+applyTheme();
 render();
 restoreIfMissing();
 
