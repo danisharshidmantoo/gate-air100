@@ -67,6 +67,111 @@ function save() {
   } catch {
     toast("Couldn't save. Storage is full or blocked.");
   }
+  scheduleSafetyCopy();
+}
+
+const hasData = (s) => s.tasks.length > 0 || Object.keys(s.days).length > 0;
+
+// ---------- Safety copies (IndexedDB) ----------
+// A second copy of everything, plus one snapshot per day for the last 30 days.
+// Guards against mistakes (a wrong import, a deleted task) and a damaged main copy.
+// It lives on this device, so it does not replace an exported backup.
+
+const SNAPSHOT_DAYS = 30;
+let dbPromise;
+
+function db() {
+  dbPromise ??= new Promise((resolve, reject) => {
+    const req = indexedDB.open("gate-air100", 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("kv");
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return dbPromise;
+}
+
+async function idb(mode, run) {
+  const store = (await db()).transaction("kv", mode).objectStore("kv");
+  return new Promise((resolve, reject) => {
+    const req = run(store);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+let safetyTimer;
+function scheduleSafetyCopy() {
+  clearTimeout(safetyTimer);
+  safetyTimer = setTimeout(writeSafetyCopy, 400);
+}
+
+async function writeSafetyCopy() {
+  if (!hasData(state)) return; // never overwrite good copies with an empty state
+  try {
+    const json = JSON.stringify(state);
+    await idb("readwrite", (s) => s.put(json, "state"));
+    await idb("readwrite", (s) => s.put(json, "snap:" + todayKey()));
+    const snaps = (await idb("readonly", (s) => s.getAllKeys())).filter((k) => String(k).startsWith("snap:")).sort();
+    for (const k of snaps.slice(0, Math.max(0, snaps.length - SNAPSHOT_DAYS))) await idb("readwrite", (s) => s.delete(k));
+  } catch { /* storage unavailable: the main copy still holds the data */ }
+}
+
+async function snapshotDates() {
+  try {
+    const keys = await idb("readonly", (s) => s.getAllKeys());
+    return keys.filter((k) => String(k).startsWith("snap:")).map((k) => k.slice(5)).sort().reverse();
+  } catch { return []; }
+}
+
+async function readSnapshot(key) {
+  return normalize(JSON.parse(await idb("readonly", (s) => s.get(key))));
+}
+
+/** Keeps the current data before an import or restore replaces it, so that can be undone. */
+async function keepBeforeReplace() {
+  if (!hasData(state)) return;
+  try { await idb("readwrite", (s) => s.put(JSON.stringify(state), "before-replace")); } catch { /* ignore */ }
+}
+
+async function hasBeforeReplace() {
+  try { return !!(await idb("readonly", (s) => s.get("before-replace"))); } catch { return false; }
+}
+
+/** If the main copy is empty or damaged but the safety copy has data, bring it back. */
+async function restoreIfMissing() {
+  if (hasData(state)) { scheduleSafetyCopy(); return; }
+  try {
+    const raw = await idb("readonly", (s) => s.get("state"));
+    if (!raw) return;
+    const copy = normalize(JSON.parse(raw));
+    if (!hasData(copy)) return;
+    state = copy;
+    save();
+    render({ keepScroll: true });
+    toast("Your data was restored from the safety copy");
+  } catch { /* nothing to restore */ }
+}
+
+// ---------- Backup reminders ----------
+
+const BACKUP_KEY = "gate-air100:lastBackup";
+const SNOOZE_KEY = "gate-air100:backupSnooze";
+const getFlag = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const setFlag = (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
+
+function lastBackupText() {
+  const last = getFlag(BACKUP_KEY);
+  if (!last) return "Never backed up";
+  const d = daysBetween(last, todayKey());
+  return d <= 0 ? "Last backup: today" : d === 1 ? "Last backup: yesterday" : `Last backup: ${d} days ago`;
+}
+
+/** Remind once there are a few days of data and no backup in the last week. */
+function backupDue() {
+  if (Object.keys(state.days).length < 3) return false;
+  if (getFlag(SNOOZE_KEY) === todayKey()) return false;
+  const last = getFlag(BACKUP_KEY);
+  return !last || daysBetween(last, todayKey()) >= 7;
 }
 
 const taskLog = (def) => ({ id: def.id, title: def.title, done: false, feedback: "", isOneOff: false, renamed: false });
@@ -363,6 +468,17 @@ function homeView() {
       <div class="dots" aria-label="100-day progress">${dots}</div>
     </section>
 
+    ${backupDue() ? `<section class="card backup-nudge">
+      <div class="nudge-text">
+        <div class="nudge-title">Keep your progress safe</div>
+        <div class="nudge-sub">${lastBackupText()}. Save a copy to iCloud Drive or Files.</div>
+      </div>
+      <div class="nudge-actions">
+        <button class="text-btn muted" data-action="snooze-backup">Later</button>
+        <button class="small-pill" data-action="export">Back up</button>
+      </div>
+    </section>` : ""}
+
     <section class="stats">
       <div class="card stat">${icons.flame}<div class="value">${currentStreak()}</div><div class="name">Streak</div></div>
       <div class="card stat">${icons.trophy}<div class="value">${bestStreak()}</div><div class="name">Best streak</div></div>
@@ -525,10 +641,16 @@ function tasksView() {
 
     <div class="label section-label">Backup</div>
     <div class="buttons" style="margin-top:0">
-      <button class="pill" data-action="export">Export backup</button>
+      <button class="pill" data-action="export">Back up now</button>
       <button class="pill" data-action="import">Import backup</button>
     </div>
-    <p class="footnote">Your data stays on this device. Export a backup now and then, and import it to move your data to another phone or computer.</p>
+    <p class="footnote"><b>${lastBackupText()}.</b> Your data lives on this device only. On iPhone, Back up now opens the share sheet: choose <b>Save to Files</b> and pick iCloud Drive, so a copy survives even if the app or phone is lost. Import a backup to restore it or move to another device.</p>
+
+    <div class="label section-label">Daily safety snapshots</div>
+    <section class="card list snapshots" style="margin-top:0">
+      <div class="list-row"><span class="row-label">Loading…</span></div>
+    </section>
+    <p class="footnote">The app keeps a snapshot of your data from each of the last ${SNAPSHOT_DAYS} days on this device. Restore one if something gets deleted by mistake.</p>
 
     <div class="label section-label">Install</div>
     <p class="footnote" style="margin-top:0">iPhone: open in Safari, tap Share, then <b>Add to Home Screen</b>.<br>Mac: in Safari choose File → <b>Add to Dock</b>; in Chrome use the install icon in the address bar.</p>`;
@@ -551,8 +673,26 @@ function render({ keepScroll = false } = {}) {
   app.innerHTML = r.name === "day" ? dayView(r.key) : r.name === "tasks" ? tasksView() : homeView();
   app.classList.toggle("wide", r.name === "home");
   app.querySelectorAll("textarea.note").forEach(autosize);
+  if (r.name === "tasks") fillSnapshots();
   window.scrollTo(0, keepScroll ? y : 0);
   document.title = r.name === "home" ? "GATE AIR<100" : r.name === "tasks" ? "Daily tasks · AIR<100" : `${shortDate(r.key)} · AIR<100`;
+}
+
+async function fillSnapshots() {
+  const box = app.querySelector(".snapshots");
+  if (!box) return;
+  const dates = await snapshotDates();
+  const undo = await hasBeforeReplace();
+  if (!box.isConnected) return;
+  box.innerHTML = dates.length || undo
+    ? `<div class="list-row">
+        <select class="snapshot-pick" aria-label="Snapshot date">
+          ${undo ? '<option value="before-replace">Before the last import or restore</option>' : ""}
+          ${dates.map((d) => `<option value="${d}">${longDate(d)}${d === todayKey() ? " (today)" : ""}</option>`).join("")}
+        </select>
+        <button class="text-btn" data-action="restore-snapshot">Restore</button>
+      </div>`
+    : '<div class="list-row"><span class="row-label muted-text">No snapshots yet. One is saved each day you use the app.</span></div>';
 }
 
 function autosize(el) {
@@ -654,6 +794,8 @@ app.addEventListener("click", (e) => {
       break;
     }
     case "export": exportBackup(); break;
+    case "snooze-backup": setFlag(SNOOZE_KEY, todayKey()); render({ keepScroll: true }); break;
+    case "restore-snapshot": restoreSnapshot(app.querySelector(".snapshot-pick").value); break;
     case "import": document.getElementById("import-file").click(); break;
   }
 });
@@ -712,16 +854,54 @@ window.addEventListener("storage", (e) => {
 
 // ---------- Backup ----------
 
-function exportBackup() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+/** iPhone: share sheet (Save to Files → iCloud Drive). Computers: a normal download. */
+async function exportBackup() {
+  const name = `gate-air100-backup-${todayKey()}.json`;
+  const file = new File([JSON.stringify(state, null, 2)], name, { type: "application/json" });
+  const touch = matchMedia("(pointer: coarse)").matches;
+
+  if (touch && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: "GATE AIR<100 backup" });
+      backedUp("Backup saved");
+      return;
+    } catch (e) {
+      if (e.name === "AbortError") return; // closed the share sheet
+    }
+  }
+
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `gate-air100-backup-${todayKey()}.json`;
+  a.href = URL.createObjectURL(file);
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  toast("Backup saved");
+  backedUp("Backup downloaded");
+}
+
+function backedUp(message) {
+  setFlag(BACKUP_KEY, todayKey());
+  render({ keepScroll: true });
+  toast(message);
+}
+
+async function restoreSnapshot(choice) {
+  if (!choice) return;
+  const undo = choice === "before-replace";
+  try {
+    const snap = await readSnapshot(undo ? choice : "snap:" + choice);
+    const n = Object.keys(snap.days).length;
+    const when = undo ? "before the last import or restore" : `on ${longDate(choice)}`;
+    if (!confirm(`Restore your data as it was ${when} (${snap.tasks.length} daily tasks, ${n} days)? Your current data is kept so you can undo this.`)) return;
+    await keepBeforeReplace();
+    state = snap;
+    save();
+    render({ keepScroll: true });
+    toast(undo ? "Restored" : `Restored ${shortDate(choice)}`);
+  } catch {
+    toast("Couldn't read that snapshot");
+  }
 }
 
 document.getElementById("import-file").addEventListener("change", async (e) => {
@@ -731,7 +911,8 @@ document.getElementById("import-file").addEventListener("change", async (e) => {
   try {
     const data = normalize(JSON.parse(await file.text()));
     const n = Object.keys(data.days).length;
-    if (!confirm(`Replace everything on this device with the backup (${data.tasks.length} daily tasks, ${n} days)?`)) return;
+    if (!confirm(`Replace everything on this device with the backup (${data.tasks.length} daily tasks, ${n} days)? Your current data is kept as a snapshot so you can undo this.`)) return;
+    await keepBeforeReplace();
     state = data;
     save();
     render();
@@ -755,6 +936,7 @@ function toast(text) {
 // ---------- Start ----------
 
 render();
+restoreIfMissing();
 
 // Offline support and storage that the browser shouldn't clear.
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {

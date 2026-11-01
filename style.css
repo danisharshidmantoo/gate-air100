@@ -508,3 +508,39 @@ input.day-rename:focus { border-color: rgba(180, 176, 230, .6); }
 }
 
 .nowrap { white-space: nowrap; }
+
+/* ---------- Backup reminder and snapshots ---------- */
+
+.backup-nudge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-color: rgba(180, 176, 230, .3);
+  background: linear-gradient(135deg, rgba(180, 176, 230, .14), rgba(22, 33, 62, .6));
+}
+.nudge-text { flex: 1; min-width: 0; }
+.nudge-title { font: 600 17px var(--serif); }
+.nudge-sub { margin-top: 3px; font-size: 13px; line-height: 1.35; color: rgba(244, 240, 230, .65); }
+.nudge-actions { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.small-pill {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.text-btn.muted { color: var(--muted); font-weight: 500; font-size: 13px; }
+.snapshot-pick {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--ivory);
+  font-size: 16px;
+}
+.muted-text { color: var(--muted); font-size: 15px; }
