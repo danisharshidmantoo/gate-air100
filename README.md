@@ -1,16 +1,29 @@
-# GATE AIR<100
+# Mission Days
 
-A small web app for the **GATE AIR < 100 in < 100 days** challenge: daily tasks, feedback on each task, a learnings note for each day, a heat-map calendar of how much got done, streaks and a 100-day countdown.
+Set a goal, count down the days, and log each day's work.
 
-Open it at **https://danisharshidmantoo.github.io/gate-air100/**
+**Open it: https://danisharshidmantoo.github.io/mission-days/**
 
-- **iPhone:** open the link in Safari → Share → **Add to Home Screen**. It runs full-screen and works offline.
-- **Mac:** open the link in Safari → File → **Add to Dock**, or install it from Chrome's address bar.
+- **Your mission, your countdown.** Name your goal (an exam rank, a fitness target, a habit) and pick how many days you have. The home screen counts down the days left and shows your streak.
+- **Daily tasks with feedback.** Tick off the tasks you set for every day, write a note under each one about what went well or what got in the way, and end the day with what you learned.
+- **Plan ahead, fix the past.** Open any day in the calendar to plan future days or edit earlier ones.
+- **Private and offline.** No account and no tracking. Everything stays on your device and works without internet.
+- **Two looks.** Mono (black with a lime accent) or Sunrise (warm and rounded), or Auto to follow light and dark mode.
 
-Everything you enter is stored only in your browser on that device; nothing is sent anywhere. Use **Daily tasks → Export backup / Import backup** to keep a copy or move to another device.
+## Install
 
-Plain HTML, CSS and JavaScript with no build step. To run it locally:
+- **iPhone:** open the link in Safari, tap Share (□↑), then **Add to Home Screen**.
+- **Android:** open it in Chrome and tap **Install app**.
+- **Mac or PC:** in Safari choose File → **Add to Dock**; in Chrome or Edge use the install icon in the address bar.
+
+## Keep your data safe
+
+Your data lives only on your device. The app keeps a safety copy and 30 daily snapshots, but those stay on the device too, so use **Settings → Back up now** now and then (on iPhone, choose *Save to Files* → iCloud Drive). **Import backup** restores it or moves it to a new phone.
+
+## For developers
+
+Plain HTML, CSS and JavaScript with no build step and no dependencies. Run it locally with:
 
 ```bash
-python3 -m http.server 8765 --directory .
+python3 -m http.server 8765
 ```

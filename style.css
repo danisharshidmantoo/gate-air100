@@ -102,7 +102,8 @@ a { color: inherit; text-decoration: none; }
   backdrop-filter: blur(18px) saturate(140%);
   border-bottom: 1px solid transparent;
 }
-.topbar.home { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* The home top bar scrolls away with the page, so the streak badge never floats over the cards. */
+.topbar.home { position: relative; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .topbar h2 { margin: 0; font: 600 17px var(--sans); text-align: center; }
 .topbar .right { justify-self: end; }
 
@@ -637,3 +638,38 @@ input.day-rename:focus { border-color: rgb(var(--a2) / .6); }
 .seg.look button { padding: 10px 8px; font-size: 14px; }
 /* Sunrise: amber is too faint for small text on cream, so labels and notes use a deep coral. */
 [data-theme="sunrise"] .label, [data-theme="sunrise"] .oneoff { color: rgb(190 70 42); }
+
+/* ---------- Welcome screen (first launch) ---------- */
+
+.welcome-hero h1 { font-size: 44px; }
+.welcome-hero .subtitle { margin-top: 6px; font-size: 17px; line-height: 1.4; font-style: normal; font-family: var(--sans); }
+textarea.w-tasks {
+  display: block;
+  width: 100%;
+  min-height: 112px;
+  padding: 10px 12px;
+  resize: vertical;
+  border: 1px solid rgb(var(--fg) / .08);
+  border-radius: calc(var(--radius, 24px) / 2);
+  outline: none;
+  background: var(--field);
+  font-size: 16px;
+  line-height: 1.5;
+}
+textarea.w-tasks:focus { border-color: rgb(var(--a1) / .5); }
+.field-row input[type="date"], .field-row input[type="number"] { color: var(--sage); font-weight: 600; }
+.start-btn {
+  display: block;
+  width: 100%;
+  margin-top: 20px;
+  padding: 16px;
+  border: 0;
+  border-radius: var(--radius, 24px);
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 700 17px var(--sans);
+  transition: transform .15s ease;
+}
+.start-btn:active { transform: scale(.98); }
+.footnote.center { text-align: center; }
+.footnote .text-btn { padding: 0; font-size: 13px; }

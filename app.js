@@ -1,13 +1,15 @@
 "use strict";
 
-/* GATE AIR<100 web app.
+/* Mission Days web app (started as GATE AIR<100).
    Same data model as the native app: daily task definitions, one log per day
-   (tasks with done/feedback, plus learnings), and a 100-day challenge start. */
+   (tasks with done/feedback, plus learnings), and a challenge start and length. */
 
-const STORAGE_KEY = "gate-air100:v1";
+const APP_NAME = "Mission Days";
+const STORAGE_KEY = "gate-air100:v1"; // kept from the first version so existing data still loads
 
-// Defaults match the original GATE AIR<100 mission; all of them can be changed in Settings.
-const DEFAULT_MISSION = { label: "GATE", title: "AIR < 100", subtitle: "in < 100 days" };
+// Data saved before missions were customisable belongs to the app's first user,
+// whose mission was GATE AIR<100. New users fill in their own on the welcome screen.
+const LEGACY_MISSION = { label: "GATE", title: "AIR < 100", subtitle: "in < 100 days" };
 const DEFAULT_LENGTH = 100;
 const MIN_LENGTH = 7;
 const MAX_LENGTH = 1000;
@@ -32,7 +34,11 @@ const newId = () => (crypto.randomUUID ? crypto.randomUUID()
 let state = load();
 
 function emptyState() {
-  return { tasks: [], days: {}, firstDay: null, startDay: null, mission: { ...DEFAULT_MISSION }, length: DEFAULT_LENGTH, theme: "mono" };
+  return {
+    tasks: [], days: {}, firstDay: null, startDay: null,
+    mission: { label: "", title: "", subtitle: "" }, length: DEFAULT_LENGTH, theme: "mono",
+    setupDone: false, // shows the welcome screen until the first mission is set
+  };
 }
 
 /** How many days the challenge runs (100 unless you change it). */
@@ -40,7 +46,7 @@ const challengeLength = () => state.length;
 
 /** Accepts this app's data and the native app's JSON (same field names). */
 function normalize(s) {
-  if (!s || !Array.isArray(s.tasks)) throw new Error("Not a GATE AIR<100 backup");
+  if (!s || !Array.isArray(s.tasks)) throw new Error(`Not a ${APP_NAME} backup`);
   const days = {};
   for (const [k, log] of Object.entries(s.days || {})) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) continue;
@@ -63,12 +69,14 @@ function normalize(s) {
     startDay: s.startDay || null,
     // Older data has no mission or length: keep the original GATE AIR<100 wording and 100 days.
     mission: {
-      label: text(m.label, DEFAULT_MISSION.label),
-      title: text(m.title, DEFAULT_MISSION.title),
-      subtitle: text(m.subtitle, DEFAULT_MISSION.subtitle),
+      label: text(m.label, LEGACY_MISSION.label),
+      title: text(m.title, LEGACY_MISSION.title),
+      subtitle: text(m.subtitle, LEGACY_MISSION.subtitle),
     },
     length: validLength(Number(s.length)) ? Number(s.length) : DEFAULT_LENGTH,
     theme: ["mono", "sunrise", "auto"].includes(s.theme) ? s.theme : "mono",
+    // Saved data and backups from before the welcome screen are already set up.
+    setupDone: typeof s.setupDone === "boolean" ? s.setupDone : true,
   };
 }
 
@@ -756,13 +764,104 @@ function tasksView() {
     </section>
     <p class="footnote">The app keeps a snapshot of your data from each of the last ${SNAPSHOT_DAYS} days on this device. Restore one if something gets deleted by mistake.</p>
 
-    <div class="label section-label">Install</div>
-    <p class="footnote" style="margin-top:0">iPhone: open in Safari, tap Share, then <b>Add to Home Screen</b>.<br>Mac: in Safari choose File → <b>Add to Dock</b>; in Chrome use the install icon in the address bar.</p>`;
+    <div class="label section-label">Install and share</div>
+    <p class="footnote" style="margin-top:0">iPhone: open in Safari, tap Share, then <b>Add to Home Screen</b>.<br>Mac: in Safari choose File → <b>Add to Dock</b>; in Chrome use the install icon in the address bar.</p>
+    <div class="buttons"><button class="pill" data-action="share-app">Share ${APP_NAME}</button></div>
+    <p class="footnote">Anyone you share it with gets their own private copy with their own mission. Nothing of yours is shared.</p>`;
 }
 
 // ---------- Rendering and routing ----------
 
+function welcomeView() {
+  return `
+    <header class="topbar home"><span></span><span></span><span></span></header>
+
+    <section class="hero welcome-hero">
+      <div class="label">Welcome to</div>
+      <h1>${APP_NAME}</h1>
+      <div class="subtitle">Set a goal, count down the days, and log each day's work, feedback and learnings.</div>
+    </section>
+
+    <section class="card">
+      <span class="label">Your mission</span>
+      <label class="field-row">
+        <span class="field-label">Goal</span>
+        <input class="w-title" placeholder="e.g. AIR < 100" maxlength="40" enterkeyhint="next" autocomplete="off">
+      </label>
+      <label class="field-row">
+        <span class="field-label">Label</span>
+        <input class="w-label" placeholder="optional, e.g. GATE" maxlength="30" enterkeyhint="next" autocomplete="off">
+      </label>
+      <label class="field-row">
+        <span class="field-label">Days</span>
+        <input type="number" class="w-length" inputmode="numeric" min="${MIN_LENGTH}" max="${MAX_LENGTH}" value="${DEFAULT_LENGTH}">
+      </label>
+      <label class="field-row">
+        <span class="field-label">Day 1</span>
+        <input type="date" class="w-start" value="${todayKey()}">
+      </label>
+    </section>
+
+    <section class="card">
+      <span class="label">Daily tasks</span>
+      <p class="edit-note">One per line. They repeat every day, and you can change them any time.</p>
+      <textarea class="w-tasks" rows="4" placeholder="Solve 30 practice questions&#10;Revise one topic&#10;Review today's mistakes"></textarea>
+    </section>
+
+    <section class="card">
+      <span class="label">Look</span>
+      <div class="seg look" role="radiogroup" aria-label="Look">
+        ${LOOKS.map((l) => `<button data-action="w-look" data-look="${l}" class="${state.theme === l ? "on" : ""}" role="radio" aria-checked="${state.theme === l}">${l === "auto" ? "Auto" : THEMES[l].name}</button>`).join("")}
+      </div>
+    </section>
+
+    <button class="start-btn" data-action="start">Start my mission</button>
+    <p class="footnote center">Everything stays on this device. No account, no tracking.</p>
+    <p class="footnote center">Moving from another phone? <button class="text-btn" data-action="import">Import a backup</button></p>`;
+}
+
+function startMission() {
+  const val = (sel) => app.querySelector(sel).value;
+  const title = val(".w-title").trim();
+  if (!title) {
+    toast("Give your mission a goal");
+    app.querySelector(".w-title").focus();
+    return;
+  }
+  const length = Math.round(Number(val(".w-length")));
+  if (!validLength(length)) {
+    toast(`Days must be between ${MIN_LENGTH} and ${MAX_LENGTH}`);
+    return;
+  }
+  state.mission = { label: val(".w-label").trim(), title, subtitle: `in ${length} days` };
+  state.length = length;
+  state.startDay = val(".w-start") || todayKey();
+  val(".w-tasks").split("\n").map((t) => t.trim()).filter(Boolean).forEach(addTask);
+  state.setupDone = true;
+  save();
+  history.replaceState(null, "", "#/");
+  render();
+  requestAnimationFrame(() => window.scrollTo(0, 0));
+  toast("Mission started. Good luck!");
+}
+
+/** Shares the app's link (share sheet on phones, copy to clipboard elsewhere). */
+async function shareApp() {
+  const url = location.origin + location.pathname;
+  const data = { title: APP_NAME, text: `${APP_NAME}: set a goal, count down the days, log your daily work.`, url };
+  if (navigator.share) {
+    try { await navigator.share(data); return; } catch (e) { if (e.name === "AbortError") return; }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    toast("Link copied");
+  } catch {
+    prompt("Copy this link:", url);
+  }
+}
+
 function route() {
+  if (!state.setupDone) return { name: "welcome" };
   const hash = location.hash || "#/";
   const day = hash.match(/^#\/day\/(\d{4}-\d{2}-\d{2})$/);
   if (day) return { name: "day", key: day[1] };
@@ -774,13 +873,17 @@ function render({ keepScroll = false } = {}) {
   const y = window.scrollY;
   const r = route();
   if (r.name !== "day") editingDay = false;
-  app.innerHTML = r.name === "day" ? dayView(r.key) : r.name === "tasks" ? tasksView() : homeView();
+  const views = { day: () => dayView(r.key), tasks: tasksView, welcome: welcomeView, home: homeView };
+  app.innerHTML = views[r.name]();
   app.classList.toggle("wide", r.name === "home");
   app.querySelectorAll("textarea.note").forEach(autosize);
   if (r.name === "tasks") fillSnapshots();
   window.scrollTo(0, keepScroll ? y : 0);
-  const name = state.mission.title.trim() || "My mission";
-  document.title = r.name === "home" ? name : r.name === "tasks" ? `Settings · ${name}` : `${shortDate(r.key)} · ${name}`;
+  const name = state.mission.title.trim() || APP_NAME;
+  document.title = r.name === "welcome" ? APP_NAME
+    : r.name === "home" ? name
+    : r.name === "tasks" ? `Settings · ${name}`
+    : `${shortDate(r.key)} · ${name}`;
 }
 
 async function fillSnapshots() {
@@ -900,6 +1003,16 @@ app.addEventListener("click", (e) => {
     }
     case "export": exportBackup(); break;
     case "look": setLook(el.dataset.look); render({ keepScroll: true }); break;
+    case "w-look":
+      // Welcome screen: switch the look without redrawing, so typed answers stay.
+      setLook(el.dataset.look);
+      el.parentElement.querySelectorAll("button").forEach((b) => {
+        b.classList.toggle("on", b === el);
+        b.setAttribute("aria-checked", b === el);
+      });
+      break;
+    case "start": startMission(); break;
+    case "share-app": shareApp(); break;
     case "snooze-backup": setFlag(SNOOZE_KEY, todayKey()); render({ keepScroll: true }); break;
     case "restore-snapshot": restoreSnapshot(app.querySelector(".snapshot-pick").value); break;
     case "import": document.getElementById("import-file").click(); break;
@@ -973,13 +1086,13 @@ window.addEventListener("storage", (e) => {
 
 /** iPhone: share sheet (Save to Files → iCloud Drive). Computers: a normal download. */
 async function exportBackup() {
-  const name = `gate-air100-backup-${todayKey()}.json`;
+  const name = `mission-days-backup-${todayKey()}.json`;
   const file = new File([JSON.stringify(state, null, 2)], name, { type: "application/json" });
   const touch = matchMedia("(pointer: coarse)").matches;
 
   if (touch && navigator.canShare?.({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title: "GATE AIR<100 backup" });
+      await navigator.share({ files: [file], title: `${APP_NAME} backup` });
       backedUp("Backup saved");
       return;
     } catch (e) {
