@@ -756,3 +756,13 @@ textarea.w-tasks:focus { border-color: rgb(var(--a1) / .5); }
 .steps .glyph { display: inline-block; width: 18px; height: 18px; vertical-align: -3px; color: var(--sage); }
 .steps .glyph svg { width: 100%; height: 100%; }
 .sheet .start-btn { margin-top: 14px; }
+
+/* ---------- About ---------- */
+
+.about p { margin: 12px 0 0; font-size: 15px; line-height: 1.45; color: rgb(var(--fg) / .75); }
+.about-head { display: flex; align-items: center; gap: 14px; }
+.about-head img { flex: none; border-radius: 11px; }
+.about-name { font: 600 19px var(--serif); }
+.about-sub { margin-top: 2px; font-size: 14px; color: var(--sage); font-weight: 600; }
+a.link { color: var(--sage); font-weight: 600; overflow-wrap: anywhere; }
+.credit { margin-top: 26px; color: var(--faint); }

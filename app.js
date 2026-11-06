@@ -5,6 +5,9 @@
    (tasks with done/feedback, plus learnings), and a challenge start and length. */
 
 const APP_NAME = "Mission Days";
+const DEVELOPER = "Danish Arshid";
+const SUPPORT_EMAIL = "danisharshidmantoo@gmail.com";
+const supportLink = (text) => `<a class="link" href="mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(APP_NAME)}">${text}</a>`;
 const STORAGE_KEY = "gate-air100:v1"; // kept from the first version so existing data still loads
 
 // Data saved before missions were customisable belongs to the app's first user,
@@ -613,7 +616,8 @@ function homeView() {
         <i style="background:var(--accent)"></i>100%
       </div>
     </section>
-    </div>`;
+    </div>
+    <p class="footnote center credit">Designed &amp; built by ${DEVELOPER} · ${supportLink("Support")}</p>`;
 }
 
 const placeholder = (done, future) => (future ? "Plan or notes for this day" : done ? "What went well?" : "What got in the way?");
@@ -797,7 +801,20 @@ function tasksView() {
       ${canInstall() ? '<button class="pill" data-action="install">Install app</button>' : ""}
       <button class="pill" data-action="share-app">Share ${APP_NAME}</button>
     </div>
-    <p class="footnote">${!canInstall() ? "Mission Days is installed on this device." : "Installing puts it on your home screen or dock, where it opens like an app and works offline."} Anyone you share it with gets their own private copy with their own mission. Nothing of yours is shared.</p>`;
+    <p class="footnote">${!canInstall() ? "Mission Days is installed on this device." : "Installing puts it on your home screen or dock, where it opens like an app and works offline."} Anyone you share it with gets their own private copy with their own mission. Nothing of yours is shared.</p>
+
+    <div class="label section-label">About</div>
+    <section class="card about" style="margin-top:0">
+      <div class="about-head">
+        <img src="icons/apple-touch-icon.png" alt="" width="48" height="48">
+        <div>
+          <div class="about-name">${APP_NAME}</div>
+          <div class="about-sub">Designed &amp; built by ${DEVELOPER}</div>
+        </div>
+      </div>
+      <p>${APP_NAME} is free, with no account, ads or tracking. Your data stays on your device.</p>
+      <p>Support: ${supportLink(SUPPORT_EMAIL)}</p>
+    </section>`;
 }
 
 // ---------- Rendering and routing ----------
@@ -847,7 +864,8 @@ function welcomeView() {
 
     <button class="start-btn" data-action="start">Start my mission</button>
     <p class="footnote center">Everything stays on this device. No account, no tracking.</p>
-    <p class="footnote center">Moving from another phone? <button class="text-btn" data-action="import">Import a backup</button></p>`;
+    <p class="footnote center">Moving from another phone? <button class="text-btn" data-action="import">Import a backup</button></p>
+    <p class="footnote center">Designed &amp; built by ${DEVELOPER} · ${supportLink("Support")}</p>`;
 }
 
 function startMission() {

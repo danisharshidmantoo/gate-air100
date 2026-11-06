@@ -22,6 +22,10 @@ Tap **Install** at the top of the app.
 
 Your data lives only on your device. The app keeps a safety copy and 30 daily snapshots, but those stay on the device too, so use **Settings → Back up now** now and then (on iPhone, choose *Save to Files* → iCloud Drive). **Import backup** restores it or moves it to a new phone.
 
+## About
+
+Designed and built by Danish Arshid. Support: [danisharshidmantoo@gmail.com](mailto:danisharshidmantoo@gmail.com).
+
 ## For developers
 
 Plain HTML, CSS and JavaScript with no build step and no dependencies. Run it locally with:
