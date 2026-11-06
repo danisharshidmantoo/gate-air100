@@ -14,6 +14,9 @@ const DEFAULT_LENGTH = 100;
 const MIN_LENGTH = 7;
 const MAX_LENGTH = 1000;
 const validLength = (n) => Number.isInteger(n) && n >= MIN_LENGTH && n <= MAX_LENGTH;
+// A day keeps the streak going once at least this share of its tasks is done (Settings: 10–100%).
+const DEFAULT_STREAK_MIN = 0.2;
+const validStreakMin = (x) => typeof x === "number" && x >= 0.1 && x <= 1;
 
 // ---------- Dates (keys are "yyyy-mm-dd" in local time) ----------
 
@@ -36,7 +39,7 @@ let state = load();
 function emptyState() {
   return {
     tasks: [], days: {}, firstDay: null, startDay: null,
-    mission: { label: "", title: "", subtitle: "" }, length: DEFAULT_LENGTH, theme: "mono",
+    mission: { label: "", title: "", subtitle: "" }, length: DEFAULT_LENGTH, theme: "mono", streakMin: DEFAULT_STREAK_MIN,
     setupDone: false, // shows the welcome screen until the first mission is set
   };
 }
@@ -77,6 +80,7 @@ function normalize(s) {
     theme: ["mono", "sunrise", "auto"].includes(s.theme) ? s.theme : "mono",
     // Saved data and backups from before the welcome screen are already set up.
     setupDone: typeof s.setupDone === "boolean" ? s.setupDone : true,
+    streakMin: validStreakMin(s.streakMin) ? s.streakMin : DEFAULT_STREAK_MIN,
   };
 }
 
@@ -217,11 +221,18 @@ function progress(key) {
   return 0;
 }
 
+/** Whether a day keeps the streak going: enough of its tasks done (the share is set in Settings). */
+function countsForStreak(key) {
+  const p = progress(key);
+  return p !== null && p >= state.streakMin - 1e-9;
+}
+
+/** Days in a row that count, ending today (or yesterday while today is still short of the goal). */
 function currentStreak() {
   let key = todayKey();
-  if (progress(key) !== 1) key = addDays(key, -1);
+  if (!countsForStreak(key)) key = addDays(key, -1);
   let n = 0;
-  while (progress(key) === 1) { n++; key = addDays(key, -1); }
+  while (countsForStreak(key)) { n++; key = addDays(key, -1); }
   return n;
 }
 
@@ -230,18 +241,23 @@ function bestStreak() {
   if (!starts.length) return 0;
   let best = 0, run = 0;
   for (let key = starts[0], end = todayKey(); key <= end; key = addDays(key, 1)) {
-    run = progress(key) === 1 ? run + 1 : 0;
+    run = countsForStreak(key) ? run + 1 : 0;
     best = Math.max(best, run);
   }
   return best;
 }
 
+/** Average completion of the month's finished days. Today joins only once it's fully done,
+    so the average doesn't dip every morning while the day is still in progress. */
 function monthAverage(y, m) {
   const n = new Date(y, m + 1, 0).getDate();
+  const today = todayKey();
   const values = [];
   for (let d = 1; d <= n; d++) {
-    const p = progress(keyOf(new Date(y, m, d)));
-    if (p !== null) values.push(p);
+    const key = keyOf(new Date(y, m, d));
+    const p = progress(key);
+    if (p === null || (key === today && p < 1)) continue;
+    values.push(p);
   }
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
 }
@@ -733,6 +749,12 @@ function tasksView() {
     <div class="label section-label">Challenge</div>
     <section class="card list" style="margin-top:0">
       <div class="list-row">
+        <span class="row-label">Streak needs</span>
+        <select class="streak-min" aria-label="Share of tasks a day needs to count for the streak">
+          ${[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((v) => `<option value="${v}" ${Math.round(state.streakMin * 100) === v ? "selected" : ""}>${v === 100 ? "all tasks" : `${v}% of tasks`}</option>`).join("")}
+        </select>
+      </div>
+      <div class="list-row">
         <span class="row-label">Length in days</span>
         <input type="number" class="challenge-length" inputmode="numeric" min="${MIN_LENGTH}" max="${MAX_LENGTH}" value="${challengeLength()}" aria-label="Challenge length in days">
       </div>
@@ -749,7 +771,7 @@ function tasksView() {
         <span class="row-value">${longDate(challengeEnd())}</span>
       </div>
     </section>
-    <p class="footnote">Set either the days left or the Day 1 date; the other follows. Changing the length keeps Day 1 and moves the last day. The home screen counts down one day at a time.</p>
+    <p class="footnote">A day keeps your streak going once it reaches the share above. Set either the days left or the Day 1 date; the other follows. Changing the length keeps Day 1 and moves the last day. The home screen counts down one day at a time.</p>
 
     <div class="label section-label">Backup</div>
     <div class="buttons" style="margin-top:0">
@@ -1047,6 +1069,11 @@ app.addEventListener("change", (e) => {
     setChallengeStart(e.target.value);
     render({ keepScroll: true });
     toast(`Day 1 is now ${shortDate(e.target.value)}`);
+  } else if (e.target.matches(".streak-min")) {
+    state.streakMin = Number(e.target.value) / 100;
+    save();
+    render({ keepScroll: true });
+    toast(`Streak: ${currentStreak()} days · a day counts at ${e.target.value === "100" ? "all tasks" : e.target.value + "% of tasks"}`);
   } else if (e.target.matches(".challenge-length")) {
     const n = Math.round(Number(e.target.value));
     if (!validLength(n)) {

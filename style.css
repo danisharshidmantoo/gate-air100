@@ -673,3 +673,17 @@ textarea.w-tasks:focus { border-color: rgb(var(--a1) / .5); }
 .start-btn:active { transform: scale(.98); }
 .footnote.center { text-align: center; }
 .footnote .text-btn { padding: 0; font-size: 13px; }
+
+/* Streak rule picker in Settings */
+.list-row select.streak-min {
+  flex: none;
+  max-width: 60%;
+  padding: 10px 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--sage);
+  font: 600 16px var(--sans);
+  text-align: right;
+  text-align-last: right;
+}
