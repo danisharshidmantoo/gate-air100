@@ -2,7 +2,7 @@
 
 Set a goal, count down the days, and log each day's work.
 
-**Open it: https://danisharshidmantoo.github.io/mission-days/**
+**Open it: https://mission-days.pages.dev/**
 
 - **Your mission, your countdown.** Name your goal (an exam rank, a fitness target, a habit) and pick how many days you have. The home screen counts down the days left and shows your streak.
 - **Daily tasks with feedback.** Tick off the tasks you set for every day, write a note under each one about what went well or what got in the way, and end the day with your learnings and feedback on how it went.
@@ -25,6 +25,10 @@ Your data lives only on your device. The app keeps a safety copy and 30 daily sn
 ## About
 
 Designed and built by Danish Arshid. Support: [danisharshidmantoo@gmail.com](mailto:danisharshidmantoo@gmail.com).
+
+## Hosting
+
+The app is served by Cloudflare Pages from this repo's `main` branch: every push deploys to https://mission-days.pages.dev/. The old address (danisharshidmantoo.github.io/mission-days) shows a "moved" page from the `github-pages-moved` branch, with a button to download data saved there.
 
 ## For developers
 
