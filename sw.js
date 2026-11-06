@@ -1,5 +1,5 @@
 // Offline support: fresh files when online (so updates show at once), cached copies when offline.
-const CACHE = "mission-days-v8";
+const CACHE = "mission-days-v9";
 const FILES = [
   "./",
   "./index.html",

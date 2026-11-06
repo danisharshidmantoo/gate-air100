@@ -437,6 +437,9 @@ const icons = {
   up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>',
   down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
   x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>',
+  more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="12" cy="19" r="2.2"/></svg>',
+  share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9H6.5A1.5 1.5 0 0 0 5 10.5v9A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 17.5 9H16M12 14V3M8.5 6.5 12 3l3.5 3.5"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   plus: '<svg class="plus" viewBox="0 0 28 28"><circle cx="14" cy="14" r="13" fill="currentColor"/><path d="M14 8.5v11M8.5 14h11" style="stroke:var(--on-accent)" stroke-width="2.4" stroke-linecap="round"/></svg>',
   flame: '<svg viewBox="0 0 24 24" fill="url(#g-accent)"><path d="M12 2c1 3.5 5.5 6 5.5 11a5.5 5.5 0 0 1-11 0c0-2.5 1.2-4.2 2.5-5.5.2 1.7 1 2.8 2 3.3C10.5 7.8 11 4.6 12 2z"/></svg>',
@@ -547,7 +550,10 @@ function homeView() {
     <header class="topbar home">
       ${streakChip()}
       <span></span>
-      <button class="icon-btn right" data-nav="#/tasks" aria-label="Daily tasks and settings">${icons.checklist}</button>
+      <div class="top-actions">
+        ${installButton()}
+        <button class="icon-btn" data-nav="#/tasks" aria-label="Daily tasks and settings">${icons.checklist}</button>
+      </div>
     </header>
 
     <div class="home-grid">
@@ -689,8 +695,8 @@ function dayView(key) {
     </section>
 
     ${future ? "" : `<section class="card">
-      <span class="label">Learnings</span>
-      <textarea class="note learn" placeholder="What did today teach you?">${esc(l.learnings)}</textarea>
+      <span class="label">Learnings and feedback</span>
+      <textarea class="note learn" placeholder="What did today teach you? How did the day go?">${esc(l.learnings)}</textarea>
     </section>`}`;
 }
 
@@ -787,16 +793,18 @@ function tasksView() {
     <p class="footnote">The app keeps a snapshot of your data from each of the last ${SNAPSHOT_DAYS} days on this device. Restore one if something gets deleted by mistake.</p>
 
     <div class="label section-label">Install and share</div>
-    <p class="footnote" style="margin-top:0">iPhone: open in Safari, tap Share, then <b>Add to Home Screen</b>.<br>Mac: in Safari choose File → <b>Add to Dock</b>; in Chrome use the install icon in the address bar.</p>
-    <div class="buttons"><button class="pill" data-action="share-app">Share ${APP_NAME}</button></div>
-    <p class="footnote">Anyone you share it with gets their own private copy with their own mission. Nothing of yours is shared.</p>`;
+    <div class="buttons" style="margin-top:0">
+      ${canInstall() ? '<button class="pill" data-action="install">Install app</button>' : ""}
+      <button class="pill" data-action="share-app">Share ${APP_NAME}</button>
+    </div>
+    <p class="footnote">${!canInstall() ? "Mission Days is installed on this device." : "Installing puts it on your home screen or dock, where it opens like an app and works offline."} Anyone you share it with gets their own private copy with their own mission. Nothing of yours is shared.</p>`;
 }
 
 // ---------- Rendering and routing ----------
 
 function welcomeView() {
   return `
-    <header class="topbar home"><span></span><span></span><span></span></header>
+    <header class="topbar home"><span></span><span></span><div class="top-actions">${installButton()}</div></header>
 
     <section class="hero welcome-hero">
       <div class="label">Welcome to</div>
@@ -881,6 +889,123 @@ async function shareApp() {
     prompt("Copy this link:", url);
   }
 }
+
+// ---------- Install ----------
+// Chromium browsers (Chrome, Edge, Samsung Internet; Android and desktop) let the Install button open
+// their own install prompt once the page qualifies (web.dev/articles/install-criteria). Safari, Firefox
+// and every browser on iPhone and iPad offer no such API, so there the button shows that browser's steps.
+
+let installPrompt = null;
+let installedHere = false; // installed from this tab: the tab stays open, but the button has done its job
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault(); // the Install button replaces the browser's own banner
+  installPrompt = e;
+});
+
+window.addEventListener("appinstalled", () => {
+  installPrompt = null;
+  installedHere = true;
+  closeInstallGuide();
+  render({ keepScroll: true });
+  toast(`${APP_NAME} is installed`);
+});
+
+/** Running as an installed app (home screen, dock or app window) rather than in a browser tab. */
+const isInstalled = () => navigator.standalone === true
+  || ["standalone", "fullscreen", "minimal-ui", "window-controls-overlay"].some((m) => matchMedia(`(display-mode: ${m})`).matches);
+
+const canInstall = () => !installedHere && !isInstalled();
+
+const installButton = () => (canInstall() ? `<button class="install-pill" data-action="install">${icons.download}Install</button>` : "");
+
+async function installApp() {
+  if (installPrompt) {
+    const p = installPrompt;
+    installPrompt = null; // a prompt can be shown only once; the browser sends a new one later
+    p.prompt();
+    const { outcome } = await p.userChoice;
+    if (outcome === "dismissed") toast("You can install it any time from the Install button");
+    return;
+  }
+  openInstallGuide();
+}
+
+/** Which install steps fit this browser. */
+function browserKind() {
+  const ua = navigator.userAgent;
+  // iPadOS reports a Mac user agent, but Macs have no touch screen.
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return /CriOS/.test(ua) ? "iosChrome" : "ios";
+  if (/Android/.test(ua)) return /Chrome/.test(ua) && !/SamsungBrowser|EdgA|OPR|Firefox/.test(ua) ? "androidChrome" : "other";
+  if (/Firefox/.test(ua)) return "firefox";
+  if (/Chrome|Edg\//.test(ua)) return "desktopChromium";
+  if (/Safari/.test(ua) && /Macintosh/.test(ua)) return "macSafari";
+  return "other";
+}
+
+/** Steps from Apple's and Google's help pages, in their own button names. */
+const INSTALL_STEPS = {
+  ios: [
+    `Tap <b>Share</b> <span class="glyph">${icons.share}</span>. If you don't see it, tap <b>⋯</b> first.`,
+    "Scroll down and tap <b>Add to Home Screen</b>.",
+    "Keep <b>Open as Web App</b> on if you see it, then tap <b>Add</b>.",
+  ],
+  iosChrome: [
+    `Tap <b>Share</b> <span class="glyph">${icons.share}</span> to the right of the address bar.`,
+    "Tap <b>Add to Home Screen</b>.",
+    "Tap <b>Add</b>.",
+  ],
+  androidChrome: [
+    `Tap <b>More</b> <span class="glyph">${icons.more}</span> to the right of the address bar.`,
+    "Tap <b>Install and create shortcut</b>.",
+    "Tap <b>Install</b>.",
+  ],
+  desktopChromium: [
+    "Click the install icon at the right end of the address bar, or open the browser menu and look for <b>Install</b>.",
+    "Click <b>Install</b>.",
+  ],
+  macSafari: [
+    "In the menu bar, choose <b>File</b> → <b>Add to Dock</b>.",
+    "Click <b>Add</b>.",
+  ],
+  firefox: [
+    "Firefox can't install web apps.",
+    "Open this page in <b>Chrome</b>, <b>Edge</b> or <b>Safari</b> and tap <b>Install</b> there.",
+  ],
+  other: [
+    "Open your browser's menu.",
+    "Choose <b>Install</b> or <b>Add to Home Screen</b>.",
+  ],
+};
+
+function openInstallGuide() {
+  closeInstallGuide();
+  const sheet = document.createElement("div");
+  sheet.id = "install-sheet";
+  sheet.innerHTML = `
+    <div class="sheet-backdrop" data-close></div>
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="install-title">
+      <div class="sheet-head">
+        <img src="icons/apple-touch-icon.png" alt="" width="52" height="52">
+        <div>
+          <h3 id="install-title">Install ${APP_NAME}</h3>
+          <p>It opens like an app and works offline.</p>
+        </div>
+      </div>
+      <ol class="steps">${INSTALL_STEPS[browserKind()].map((step) => `<li>${step}</li>`).join("")}</ol>
+      <button class="start-btn" data-close>Got it</button>
+    </section>`;
+  sheet.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) closeInstallGuide(); });
+  document.body.append(sheet);
+  requestAnimationFrame(() => sheet.classList.add("open"));
+  sheet.querySelector(".start-btn").focus({ preventScroll: true });
+}
+
+function closeInstallGuide() {
+  document.getElementById("install-sheet")?.remove();
+}
+
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeInstallGuide(); });
 
 function route() {
   if (!state.setupDone) return { name: "welcome" };
@@ -1035,6 +1160,7 @@ app.addEventListener("click", (e) => {
       break;
     case "start": startMission(); break;
     case "share-app": shareApp(); break;
+    case "install": installApp(); break;
     case "snooze-backup": setFlag(SNOOZE_KEY, todayKey()); render({ keepScroll: true }); break;
     case "restore-snapshot": restoreSnapshot(app.querySelector(".snapshot-pick").value); break;
     case "import": document.getElementById("import-file").click(); break;

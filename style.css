@@ -687,3 +687,72 @@ textarea.w-tasks:focus { border-color: rgb(var(--a1) / .5); }
   text-align: right;
   text-align-last: right;
 }
+
+/* ---------- Install button and guide ---------- */
+
+.top-actions { justify-self: end; display: flex; align-items: center; gap: 8px; }
+.install-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 13px 8px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 700 14px var(--sans);
+  white-space: nowrap;
+  transition: transform .15s ease;
+}
+.install-pill:active { transform: scale(.96); }
+.install-pill svg { width: 16px; height: 16px; }
+
+#install-sheet { position: fixed; inset: 0; z-index: 20; }
+.sheet-backdrop { position: absolute; inset: 0; background: rgb(0 0 0 / .55); opacity: 0; transition: opacity .25s; }
+.sheet {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: min(520px, 100%);
+  padding: 22px 20px calc(env(safe-area-inset-bottom) + 20px);
+  border: 1px solid rgb(var(--fg) / .1);
+  border-bottom: 0;
+  border-radius: calc(var(--radius) + 14px) calc(var(--radius) + 14px) 0 0;
+  background: rgb(var(--surface));
+  transform: translate(-50%, 100%);
+  transition: transform .35s cubic-bezier(.2, .8, .2, 1);
+}
+#install-sheet.open .sheet-backdrop { opacity: 1; }
+#install-sheet.open .sheet { transform: translate(-50%, 0); }
+.sheet-head { display: flex; align-items: center; gap: 14px; }
+.sheet-head img { flex: none; border-radius: 12px; }
+.sheet-head h3 { margin: 0; font: 600 20px var(--serif); }
+.sheet-head p { margin: 3px 0 0; font-size: 14px; color: var(--muted); }
+.steps { margin: 18px 0 0; padding: 0; list-style: none; counter-reset: step; }
+.steps li {
+  position: relative;
+  counter-increment: step;
+  padding: 11px 0 11px 42px;
+  border-top: 1px solid var(--line);
+  font-size: 16px;
+  line-height: 1.4;
+  color: rgb(var(--fg) / .8);
+}
+.steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 9px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgb(var(--a1) / .15);
+  color: var(--sage);
+  font: 700 14px var(--sans);
+}
+.steps b { color: var(--ivory); }
+.steps .glyph { display: inline-block; width: 18px; height: 18px; vertical-align: -3px; color: var(--sage); }
+.steps .glyph svg { width: 100%; height: 100%; }
+.sheet .start-btn { margin-top: 14px; }
